@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
+import time
 
 import csv
 
@@ -74,7 +75,9 @@ class MyDb:
     def has_artist(self, soundcloud_name):
         return soundcloud_name in self.artist_set
 
+
 def load_xml(ig_handle):
+    time.sleep(1)
     # url of rss feed
     url = 'https://socialblade.com/instagram/user/{}'.format(ig_handle)
 
@@ -83,20 +86,24 @@ def load_xml(ig_handle):
     }
     # creating HTTP response object from given url
     resp = requests.get(url, headers=headers)
+    print('resp', resp.status_code)
 
     if resp.status_code == 200:
         with open('filename.xml', 'wb') as f:
+            print('new content')
             f.write(resp.content)
 
 def get_metrics_from_xml():
-  try:
     with open("filename.xml") as fp:
         soup = BeautifulSoup(fp, "html.parser")
         spans = soup.find_all("div", {"class": "YouTubeUserTopInfo"})
+        print(spans)
         metrics = []
         for i in range(0, len(spans) - 1):
             metrics.append(spans[i].find(
                 "span", {"style": "font-weight: bold;"}).text.strip())
+        
+        print('metrics', metrics)
         return {
             u'media_uploads': metrics[0],
             u'followers': metrics[1],
@@ -105,39 +112,39 @@ def get_metrics_from_xml():
             u'avg_likes': metrics[4],
             u'avg_comments': metrics[5],
         }
-  except IndexError as e:
-    print("ERROR: IndexError")
-    return {
-            u'media_uploads': '',
-            u'followers': '',
-            u'following': '',
-            u'engagement_rate': '',
-            u'avg_likes': '',
-            u'avg_comments': '',
-        }
+#   except IndexError as e:
+#     print("ERROR: IndexError")
+#     return {
+#             u'media_uploads': '',
+#             u'followers': '',
+#             u'following': '',
+#             u'engagement_rate': '',
+#             u'avg_likes': '',
+#             u'avg_comments': '',
+#         }
+
+def is_manually_added_ig(artist_dict):
+    return artist_dict.get("ig_handle") != "" and artist_dict.get("media_uploads")  == ""
 
 def add_metrics_to_db():
     db = MyDb()
 
-    db_coll = firestore.client().collection(u'artists')
-    docs = [snapshot for snapshot in db_coll.stream()]
-    print(len(docs))
-    for doc in docs:
-      artist = doc.to_dict()
-
-      if artist.get("ig_handle") != "":
-        load_xml(artist.get("ig_handle"))
-        metrics_dict = get_metrics_from_xml()
-        db.append_metrics(artist, metrics_dict)
-      else: 
-        db.append_metrics(artist, {
-            u'media_uploads': '',
-            u'followers': '',
-            u'following': '',
-            u'engagement_rate': '',
-            u'avg_likes': '',
-            u'avg_comments': '',
-        })
-
+    with open('manual_ig.csv', 'r') as csvfile:
+        reader = csv.DictReader(csvfile)
+        for artist in reader:
+            if is_manually_added_ig(artist):
+                load_xml(artist.get("ig_handle"))
+                metrics_dict = get_metrics_from_xml()
+                artist.update(
+                    media_uploads=metrics_dict.get("media_uploads"),
+                    followers=metrics_dict.get("followers"),
+                    following=metrics_dict.get("following"),
+                    engagement_rate=metrics_dict.get("engagement_rate"),
+                    avg_likes=metrics_dict.get("avg_likes"),
+                    avg_comments=metrics_dict.get("avg_comments")
+                )
+                print(artist)
+                db.add_artist(artist)
+# db = MyDb()
+# db.get_db_as_csv()
 add_metrics_to_db()
-

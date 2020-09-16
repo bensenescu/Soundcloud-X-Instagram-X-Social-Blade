@@ -13,7 +13,7 @@ class MyDb:
         firebase_admin.initialize_app(cred)
 
         self.db_coll = firestore.client().collection(u'artists')
-        self.all_documents = self.db_coll.stream()
+        self.all_documents = self.db_coll.limit(10).stream()
         self.artist_set = set(map(lambda doc: doc.id,self.all_documents))
 
     def add_artist(self, artist_dict):
@@ -34,7 +34,7 @@ class MyDb:
             })
         except ValueError as e:
             print("ERROR: Value Error, couldn't add {} to db".format(
-                artist_dict.get("soundcloud_name")), e)
+                artist_dict), e)
         # except:
         #     print("ERROR: 503 Database unavailable.")
         #     time.sleep(5)
@@ -73,71 +73,46 @@ class MyDb:
 
     def has_artist(self, soundcloud_name):
         return soundcloud_name in self.artist_set
+    def list_types(self):
+        count = 0
+        for doc in self.db_coll.stream():
+            count += 1
+            doc_copy = doc.to_dict()
+            if doc_copy.get("soundcloud_name") and count > 1250 and count < 1600:
+                artist = {
+                    u'timestamp': doc_copy.get("timestamp"),
+                    u'song_name': doc_copy.get("song_name"),
+                    u'ig_handle': doc_copy.get("ig_handle"),
+                    u'song_listens': str_to_number(doc_copy.get("song_listens")),
+                    u'genre': doc_copy.get("genre"),
+                    u'soundcloud_name': doc_copy.get("soundcloud_name"),
+                    u'media_uploads': str_to_number(doc_copy.get("media_uploads")),
+                    u'followers': str_to_number(doc_copy.get("followers")),
+                    u'following': str_to_number(doc_copy.get("following")),
+                    u'engagement_rate': str_to_number(doc_copy.get("engagement_rate")),
+                    u'avg_likes': str_to_number(doc_copy.get("avg_likes")),
+                    u'avg_comments': str_to_number(doc_copy.get("avg_comments")),
+                }
+                self.add_artist(artist)
 
-def load_xml(ig_handle):
-    # url of rss feed
-    url = 'https://socialblade.com/instagram/user/{}'.format(ig_handle)
 
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.3'
-    }
-    # creating HTTP response object from given url
-    resp = requests.get(url, headers=headers)
+def str_to_number(string):
+    try:
+        s = str(string)
+        if "%" in s:
+            s = s.replace("%", "")
+            f = float(s)
+            return f / 100
+        elif s != "n/a" and s != "":
+            s = s.replace(",", "")
+            return float(s)
+        else:
+            return -1.0
+    except ValueError:
+        print('couldnt convert', s,  s != "")
 
-    if resp.status_code == 200:
-        with open('filename.xml', 'wb') as f:
-            f.write(resp.content)
 
-def get_metrics_from_xml():
-  try:
-    with open("filename.xml") as fp:
-        soup = BeautifulSoup(fp, "html.parser")
-        spans = soup.find_all("div", {"class": "YouTubeUserTopInfo"})
-        metrics = []
-        for i in range(0, len(spans) - 1):
-            metrics.append(spans[i].find(
-                "span", {"style": "font-weight: bold;"}).text.strip())
-        return {
-            u'media_uploads': metrics[0],
-            u'followers': metrics[1],
-            u'following': metrics[2],
-            u'engagement_rate': metrics[3],
-            u'avg_likes': metrics[4],
-            u'avg_comments': metrics[5],
-        }
-  except IndexError as e:
-    print("ERROR: IndexError")
-    return {
-            u'media_uploads': '',
-            u'followers': '',
-            u'following': '',
-            u'engagement_rate': '',
-            u'avg_likes': '',
-            u'avg_comments': '',
-        }
-
-def add_metrics_to_db():
-    db = MyDb()
-
-    db_coll = firestore.client().collection(u'artists')
-    docs = [snapshot for snapshot in db_coll.stream()]
-    print(len(docs))
-    for doc in docs:
-      artist = doc.to_dict()
-
-      if artist.get("ig_handle") != "":
-        load_xml(artist.get("ig_handle"))
-        metrics_dict = get_metrics_from_xml()
-        db.append_metrics(artist, metrics_dict)
-      else: 
-        db.append_metrics(artist, {
-            u'media_uploads': '',
-            u'followers': '',
-            u'following': '',
-            u'engagement_rate': '',
-            u'avg_likes': '',
-            u'avg_comments': '',
-        })
-
-add_metrics_to_db()
-
+# views = "12,000"
+# print(int(views))
+db = MyDb()
+db.list_types()

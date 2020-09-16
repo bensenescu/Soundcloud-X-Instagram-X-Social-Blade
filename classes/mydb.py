@@ -1,5 +1,3 @@
-import requests
-from bs4 import BeautifulSoup
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
@@ -73,71 +71,3 @@ class MyDb:
 
     def has_artist(self, soundcloud_name):
         return soundcloud_name in self.artist_set
-
-def load_xml(ig_handle):
-    # url of rss feed
-    url = 'https://socialblade.com/instagram/user/{}'.format(ig_handle)
-
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.3'
-    }
-    # creating HTTP response object from given url
-    resp = requests.get(url, headers=headers)
-
-    if resp.status_code == 200:
-        with open('filename.xml', 'wb') as f:
-            f.write(resp.content)
-
-def get_metrics_from_xml():
-  try:
-    with open("filename.xml") as fp:
-        soup = BeautifulSoup(fp, "html.parser")
-        spans = soup.find_all("div", {"class": "YouTubeUserTopInfo"})
-        metrics = []
-        for i in range(0, len(spans) - 1):
-            metrics.append(spans[i].find(
-                "span", {"style": "font-weight: bold;"}).text.strip())
-        return {
-            u'media_uploads': metrics[0],
-            u'followers': metrics[1],
-            u'following': metrics[2],
-            u'engagement_rate': metrics[3],
-            u'avg_likes': metrics[4],
-            u'avg_comments': metrics[5],
-        }
-  except IndexError as e:
-    print("ERROR: IndexError")
-    return {
-            u'media_uploads': '',
-            u'followers': '',
-            u'following': '',
-            u'engagement_rate': '',
-            u'avg_likes': '',
-            u'avg_comments': '',
-        }
-
-def add_metrics_to_db():
-    db = MyDb()
-
-    db_coll = firestore.client().collection(u'artists')
-    docs = [snapshot for snapshot in db_coll.stream()]
-    print(len(docs))
-    for doc in docs:
-      artist = doc.to_dict()
-
-      if artist.get("ig_handle") != "":
-        load_xml(artist.get("ig_handle"))
-        metrics_dict = get_metrics_from_xml()
-        db.append_metrics(artist, metrics_dict)
-      else: 
-        db.append_metrics(artist, {
-            u'media_uploads': '',
-            u'followers': '',
-            u'following': '',
-            u'engagement_rate': '',
-            u'avg_likes': '',
-            u'avg_comments': '',
-        })
-
-add_metrics_to_db()
-
